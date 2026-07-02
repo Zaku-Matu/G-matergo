@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GT G-Force & Gimbal Simulator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts & FontAwesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #0b0f19;
+            color: #f3f4f6;
+        }
+        .hud-font {
+            font-family: 'Share Tech Mono', monospace;
+        }
+        .lcd-font {
+            font-family: 'Orbitron', sans-serif;
+        }
+    </style>
+</head>
+<body class="min-h-screen overflow-x-hidden flex flex-col pb-8">
+
+    <!-- ヘッダー -->
+    <header class="bg-[#111827] border-b border-red-600/40 py-3 px-6 shadow-lg flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <span class="bg-red-600 text-white font-black px-3 py-1 rounded italic text-lg lcd-font tracking-wider">GT</span>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-gray-100 flex items-center">
+                    G-FORCE & GIMBAL SIMULATOR
+                </h1>
+                <p class="text-xs text-red-500 font-bold tracking-widest lcd-font">PHYSICS RESEARCH & MOTION REPRODUCTION</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4">
+            <div id="status-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1.5 animate-pulse">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span> READY
+            </div>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="flex-grow max-w-7xl w-full mx-auto p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- 左カラム：ビジュアル・計測部 (8/12) -->
+        <div class="lg:col-span-8 flex flex-col space-y-6">
+
+            <!-- 1. 走行シミュレーションHUD & 簡易コースマップ -->
+            <div class="bg-[#111827]/90 rounded-xl p-4 border border-gray-800 shadow-xl flex flex-col md:flex-row gap-4 items-center">
+                <!-- マップ描画エリア -->
+                <div class="relative w-full md:w-1/3 h-48 bg-[#0a0f1d] rounded-lg border border-gray-800 overflow-hidden flex flex-col justify-between p-2">
+                    <div class="absolute top-2 left-2 z-10">
+                        <span class="text-xs font-bold text-gray-400 lcd-font tracking-wider">COURSE VIEW</span>
+                    </div>
+                    <canvas id="course-map-canvas" class="w-full h-full"></canvas>
+                </div>
+
+                <!-- 車両ステータスHUD -->
+                <div class="w-full md:w-2/3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div class="bg-[#0b101e] p-3 rounded-lg border border-gray-800 flex flex-col justify-between">
+                        <span class="text-[10px] text-red-500 font-bold tracking-wider">SPEED</span>
+                        <div class="flex items-baseline justify-end">
+                            <span id="hud-speed" class="text-3xl font-black text-white lcd-font">0</span>
+                            <span class="text-xs text-gray-400 ml-1">km/h</span>
+                        </div>
+                    </div>
+                    <div class="bg-[#0b101e] p-3 rounded-lg border border-gray-800 flex flex-col justify-between">
+                        <span class="text-[10px] text-green-400 font-bold tracking-wider">HORIZONTAL G</span>
+                        <div class="flex items-baseline justify-end">
+                            <span id="hud-total-g" class="text-3xl font-black text-green-400 lcd-font">0.00</span>
+                            <span class="text-xs text-gray-400 ml-1">G</span>
+                        </div>
+                    </div>
+                    <div class="bg-[#0b101e] p-3 rounded-lg border border-gray-800 flex flex-col justify-between">
+                        <span class="text-[10px] text-blue-400 font-bold tracking-wider">VERTICAL G</span>
+                        <div class="flex items-baseline justify-end">
+                            <span id="hud-z-g" class="text-3xl font-black text-blue-400 lcd-font">1.00</span>
+                            <span class="text-xs text-gray-400 ml-1">G</span>
+                        </div>
+                    </div>
+                    <!-- 3次元合成G & 各方向G -->
+                    <div class="bg-[#0b101e] p-2 rounded-lg border border-gray-800 col-span-2 sm:col-span-3 flex justify-around text-xs hud-font text-gray-300">
+                        <div>前後Gx: <span id="val-gx" class="font-bold text-white">0.00G</span> (加減速)</div>
+                        <div class="border-l border-gray-800 px-3">左右Gy: <span id="val-gy" class="font-bold text-white">0.00G</span> (旋回)</div>
+                        <div class="border-l border-gray-800 px-3">上下Gz: <span id="val-gz" class="font-bold text-white">1.00G</span> (起伏)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. G-Bowl & 3Dジンバル振り子 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- G-Bowl & 摩擦円インジケーター -->
+                <div class="bg-[#111827] rounded-xl p-5 border border-gray-800 shadow-xl flex flex-col items-center relative">
+                    <div class="w-full flex justify-between items-center mb-3">
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                            <h3 class="text-sm font-bold tracking-wider">G-BOWL INDICATOR</h3>
+                        </div>
+                        <span class="text-[10px] bg-gray-800 text-gray-300 px-2 py-0.5 rounded lcd-font">2D FRICTION CIRCLE</span>
+                    </div>
+                    <!-- G-Bowl キャンバス -->
+                    <div class="relative w-64 h-64 bg-[#0a0f1d] rounded-full border-4 border-gray-800 flex items-center justify-center overflow-hidden shadow-inner">
+                        <canvas id="gbowl-canvas" width="256" height="256" class="w-full h-full rounded-full"></canvas>
+                    </div>
+                    <div class="mt-3 text-center text-xs text-gray-400 flex space-x-3">
+                        <span><span class="inline-block w-2.5 h-2.5 bg-green-500 rounded-full mr-1"></span>安全 (&lt;0.2G)</span>
+                        <span><span class="inline-block w-2.5 h-2.5 bg-yellow-500 rounded-full mr-1"></span>許容 (0.2~0.4G)</span>
+                        <span><span class="inline-block w-2.5 h-2.5 bg-red-500 rounded-full mr-1"></span>限界 (&gt;0.4G)</span>
+                    </div>
+                </div>
+
+                <!-- 3Dジンバル振り子メーター -->
+                <div class="bg-[#111827] rounded-xl p-5 border border-gray-800 shadow-xl flex flex-col items-center">
+                    <div class="w-full flex justify-between items-center mb-2">
+                        <div class="flex items-center space-x-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full bg-red-600"></span>
+                            <h3 class="text-sm font-bold tracking-wider">GIMBAL PENDULUM (3D)</h3>
+                        </div>
+                        <span class="text-[10px] bg-red-950 text-red-400 px-2 py-0.5 rounded font-bold lcd-font">PHYSICAL MODEL</span>
+                    </div>
+                    <!-- 3Dジンバルキャンバス -->
+                    <div class="relative w-64 h-64 bg-[#0a0f1d] rounded-lg border border-gray-800 overflow-hidden flex items-center justify-center cursor-move" id="gimbal-container">
+                        <canvas id="gimbal-canvas" width="256" height="256" class="w-full h-full"></canvas>
+                        <!-- カメラ回転ガイド -->
+                        <div class="absolute bottom-2 right-2 text-[10px] text-gray-400/80 bg-gray-900/60 px-2 py-0.5 rounded pointer-events-none">
+                            <i class="fa-solid fa-arrows-spin mr-1"></i>ドラッグで視点回転
+                        </div>
+                    </div>
+                    <div class="mt-2 text-center text-[10px] text-gray-400 leading-relaxed">
+                        銀色：外輪(前後Pitch軸) / 金色：内輪(左右Roll軸) <br>
+                        Gによりジンバルが傾き、吊るされた重りと上部のオレンジの指針が動きます。
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. バーチャル「週刊誌2冊重ね」実験 -->
+            <div class="bg-[#111827] rounded-xl p-5 border border-gray-800 shadow-xl flex flex-col relative overflow-hidden">
+                <div class="absolute -right-16 -top-10 w-40 h-40 bg-red-600/5 rounded-full blur-2xl"></div>
+                <div class="w-full flex justify-between items-center mb-4">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-lg">📚</span>
+                        <div>
+                            <h3 class="text-sm font-bold">バーチャル「週刊誌2冊重ね」物理実験</h3>
+                            <p class="text-[10px] text-gray-400">0.3Gで「ツツー」とズレ始め、0.4G超で「ストーン！」と滑り落ちます</p>
+                        </div>
+                    </div>
+                    <button id="btn-stack-books" class="bg-gray-800 hover:bg-gray-700 text-xs px-3 py-1.5 rounded-lg border border-gray-700 transition flex items-center space-x-1">
+                        <i class="fa-solid fa-rotate-left text-red-500"></i>
+                        <span>本を積み直す</span>
+                    </button>
+                </div>
+
+                <!-- 本棚・シミュレート部 -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                    <!-- アニメーション表示 -->
+                    <div class="md:col-span-8 bg-[#0a0f1d] h-40 rounded-lg border border-gray-800 relative overflow-hidden flex items-center justify-center">
+                        <canvas id="books-canvas" class="w-full h-full"></canvas>
+                        <div id="book-slip-indicator" class="absolute top-2 left-2 bg-red-600 text-white font-bold text-[10px] px-2 py-0.5 rounded tracking-widest hidden animate-pulse">SLIPPING!</div>
+                        <div id="book-fall-indicator" class="absolute inset-0 bg-red-900/80 flex items-center justify-center flex-col space-y-1 text-white font-black text-sm tracking-widest hidden">
+                            <span>🚨 週刊誌が完全に落下しました！ 🚨</span>
+                            <span class="text-xs font-normal text-gray-300">0.4Gを超える急なGが発生したためです</span>
+                        </div>
+                    </div>
+                    <!-- 本のステータス情報 -->
+                    <div class="md:col-span-4 space-y-2">
+                        <div class="bg-[#1c1d2e]/30 p-3 rounded border border-gray-800">
+                            <span class="text-[10px] text-gray-400 block">現在の上巻のズレ</span>
+                            <div class="flex justify-between items-baseline mt-1">
+                                <span id="book-slip-dist" class="text-xl font-bold lcd-font text-white">0.0 mm</span>
+                                <span id="book-status" class="text-xs text-green-400 font-bold">安定静止(0.2G以下)</span>
+                            </div>
+                            <div class="w-full bg-gray-800 h-1.5 rounded-full overflow-hidden mt-2">
+                                <div id="book-slip-bar" class="bg-green-500 h-full w-0 transition-all duration-100"></div>
+                            </div>
+                        </div>
+                        <div class="text-[10px] text-gray-400 leading-relaxed">
+                            💡 乗り物酔いしやすい人が快適に耐えられる境界線は <span class="text-green-400 font-bold">0.2G以下</span> です。この重ねた本を一度も動かさずにコースを周回することが、究極の滑らかな運転テクニックの証となります。
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 右カラム：設定・制御パネル (4/12) -->
+        <div class="lg:col-span-4 flex flex-col space-y-6">
+
+            <!-- A. 自動走行コントロール -->
+            <div class="bg-[#111827] rounded-xl p-5 border border-red-600/30 shadow-xl relative overflow-hidden">
+                <div class="absolute top-0 right-0 w-24 h-24 bg-red-600/10 rounded-full blur-xl"></div>
+                <h3 class="text-sm font-bold tracking-wider mb-4 border-b border-gray-800 pb-2 flex items-center gap-1.5 text-red-500">
+                    <i class="fa-solid fa-gamepad"></i> SIMULATION CONTROL
+                </h3>
+
+                <!-- 走行開始・停止ボタン -->
+                <button id="btn-run" class="w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 px-6 rounded-xl border border-red-500 shadow-lg text-lg tracking-widest transition transform active:scale-95 flex items-center justify-center space-x-3 mb-4">
+                    <i class="fa-solid fa-play"></i>
+                    <span>自動走行 スタート</span>
+                </button>
+
+                <div class="space-y-4">
+                    <!-- コース選択 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">コースを選択 (グランツーリスモ収録)</label>
+                        <select id="select-course" class="w-full bg-neutral-900 border border-neutral-700 text-white p-2 rounded focus:ring-1 focus:ring-red-500 focus:outline-none">
+                            <option value="grand_valley">Grand Valley Speedway (5.02 km)</option>
+                            <option value="test_course">Test Course (10.34 km) - 超高速オーバル</option>
+                            <option value":"seattle">Seattle Circuit (3.86 km) - ジャンピング坂道</option>
+                            <option value="laguna">Laguna Seca (3.66 km) - 急降下コークスクリュー</option>
+                            <option value="complex_string">Complex String (11.23 km) - 連続スラローム</option>
+                        </select>
+                    </div>
+
+                    <!-- 走行スタイル・車両タイプ選択 -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">車両・走行スタイル</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="style-eco" class="py-2.5 px-3 rounded-lg text-xs font-bold border border-emerald-500 bg-emerald-500/10 text-emerald-400 flex flex-col items-center justify-center hover:bg-emerald-500/20 transition duration-150">
+                                <i class="fa-solid fa-truck text-base mb-1"></i>
+                                <span>日常エコ運転 (2トン車)</span>
+                                <span class="text-[9px] font-normal text-emerald-500/90 mt-0.5">滑らか最大0.3G想定</span>
+                            </button>
+                            <button id="style-race" class="py-2.5 px-3 rounded-lg text-xs font-bold border border-gray-700 bg-gray-900 text-gray-400 flex flex-col items-center justify-center hover:bg-gray-800 transition duration-150">
+                                <i class="fa-solid fa-fire text-base mb-1"></i>
+                                <span>レースアタック (RS)</span>
+                                <span class="text-[9px] font-normal text-gray-500 mt-0.5">限界スリップ 1.5G想定</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- B. ダンパー設定 (DAMPING CHARACTERISTICS) -->
+            <div class="bg-[#111827] rounded-xl p-5 border border-gray-800 shadow-xl">
+                <h3 class="text-sm font-bold tracking-wider mb-4 border-b border-gray-800 pb-2 flex items-center gap-1.5">
+                    <i class="fa-solid fa-sliders"></i> DAMPING PHYSICS (制振設定)
+                </h3>
+
+                <div class="space-y-4">
+                    <!-- ダンパータイプ -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1.5">ダンパーの物理的機構</label>
+                        <div class="grid grid-cols-3 gap-2 text-center text-[10px] font-bold">
+                            <label class="cursor-pointer border border-blue-500 bg-blue-500/10 text-blue-400 p-2 rounded flex flex-col items-center justify-center" id="lbl-damping-liquid">
+                                <input type="radio" name="damping-type" value="liquid" checked class="hidden">
+                                <i class="fa-solid fa-faucet-drip mb-1"></i>
+                                <span>液体ダンパー</span>
+                            </label>
+                            <label class="cursor-pointer border border-gray-800 bg-gray-900 text-gray-400 p-2 rounded flex flex-col items-center justify-center" id="lbl-damping-magnetic">
+                                <input type="radio" name="damping-type" value="magnetic" class="hidden">
+                                <i class="fa-solid fa-magnet mb-1"></i>
+                                <span>磁気ダンパー</span>
+                            </label>
+                            <label class="cursor-pointer border border-gray-800 bg-gray-900 text-gray-400 p-2 rounded flex flex-col items-center justify-center" id="lbl-damping-friction">
+                                <input type="radio" name="damping-type" value="friction" class="hidden">
+                                <i class="fa-solid fa-hand-holding-hand mb-1"></i>
+                                <span>摩擦ダンパー</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 粘性係数のスライダー -->
+                    <div>
+                        <div class="flex justify-between text-xs text-gray-400 mb-1">
+                            <span>ダンパー減衰の強さ</span>
+                            <span id="val-damping" class="text-white font-bold">3.0</span>
+                        </div>
+                        <input type="range" id="slider-damping" min="0.5" max="8.0" step="0.1" value="3.0" class="w-full accent-red-600 bg-gray-900 rounded-lg appearance-none h-2 cursor-pointer">
+                    </div>
+
+                    <div id="damping-explain-box" class="bg-blue-950/20 border border-blue-500/30 rounded p-3 text-[10px] text-blue-300 leading-relaxed">
+                        <span class="font-bold text-blue-400 block mb-1">💧 液体ダンパー (Liquid Damper)</span>
+                        液体の粘り気を利用した標準的な揺れ防止機能。滑らかですが、温度変化による特性の変化や液漏れの可能性があります。
+                    </div>
+                </div>
+            </div>
+
+            <!-- C. 計器調整 & 音声警告 -->
+            <div class="bg-[#111827] rounded-xl p-5 border border-gray-800 shadow-xl">
+                <h3 class="text-sm font-bold tracking-wider mb-4 border-b border-gray-800 pb-2 flex items-center gap-1.5">
+                    <i class="fa-solid fa-wrench"></i> CALIBRATION & AUDIO
+                </h3>
+
+                <div class="space-y-4">
+                    <!-- 水平補正ボタン -->
+                    <div>
+                        <label class="block text-xs text-gray-400 mb-1">スマホ設置時のゼロ点補正</label>
+                        <button id="btn-calibrate" class="w-full bg-gray-800 hover:bg-gray-700 text-xs py-2 px-4 rounded border border-gray-700 transition flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-compress text-green-500"></i>
+                            <span class="font-bold">現在の位置を 0G（基準）に設定</span>
+                        </button>
+                        <span class="text-[9px] text-gray-400 block mt-1 leading-normal">
+                            スマホホルダーなどで傾けて固定した場合でも、現在の姿勢を「基準」にしてGセンサーをリセットできます。
+                        </span>
+                    </div>
+
+                    <!-- 音声警告 -->
+                    <div class="flex items-center justify-between p-3 bg-gray-900/40 rounded border border-gray-800">
+                        <div class="flex flex-col">
+                            <span class="text-xs font-bold text-gray-200">超過アラート音 (🔊 ON)</span>
+                            <span class="text-[9px] text-gray-400">0.3G（およそ本のズレ始め）で音を鳴らす</span>
+                        </div>
+                        <button id="btn-toggle-sound" class="text-xl text-green-400 p-2 rounded hover:bg-gray-800 transition">
+                            <i class="fa-solid fa-volume-high"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- フッター説明 -->
+    <footer class="text-center text-xs text-gray-500 mt-6 max-w-7xl mx-auto w-full px-6 flex flex-col md:flex-row justify-between items-center border-t border-gray-800 pt-4 gap-2">
+        <p>© 2026 G-FORCE & GIMBAL SYSTEM DYNAMICS LAB. All rights reserved.</p>
+        <p class="lcd-font">PHYSICAL COMPONENT SIMULATION MODEL: VER 2.14</p>
+    </footer>
+
+    <!-- Web Audio API の自動再生ポリシー対応用のモーダル -->
+    <div id="welcome-modal" class="fixed inset-0 bg-[#070913]/90 flex items-center justify-center z-50 p-4">
+        <div class="bg-[#111827] max-w-lg w-full rounded-2xl border border-red-600/30 p-6 shadow-2xl relative">
+            <span class="bg-red-600 text-white font-black px-3 py-1 rounded italic text-sm lcd-font tracking-wider absolute -top-3 left-6">GT ACCELERATION SYSTEM</span>
+            <h2 class="text-xl font-black text-gray-100 mb-2 mt-2 flex items-center gap-2">
+                <i class="fa-solid fa-fire text-red-500"></i> G-Force 物理再現シミュレーターへようこそ
+            </h2>
+            <div class="text-xs text-gray-300 space-y-3 leading-relaxed mb-6">
+                <p>
+                    このアプリは、PlayStation専用ソフト<b>『グランツーリスモ3』</b>などで培われた高度な車両運動力学に準拠した、3軸重力加速度および<b>ジンバル式振り子Gメーター</b>の動作を忠実にシミュレートするプログラムです。
+                </p>
+                <div class="bg-gray-900/60 p-3 rounded-lg border border-gray-800">
+                    <span class="font-bold text-red-400 block mb-1">🎮 主な機能と見どころ</span>
+                    <ul class="list-disc pl-4 space-y-1">
+                        <li><b>コース・車両選択</b>：名門スピードウェイや、シアトルのジャンピング坂、ラグナセカの急勾配での3次元G変化。</li>
+                        <li><b>振り子の3D運動物理モデル</b>：減衰ダンパー（液体・電磁・摩擦）によるリアルな挙動の差。</li>
+                        <li><b>週刊誌2冊重ね実験</b>：荷重が安定域（0.2G）を超えた瞬間にズレ動く本の実挙動。</li>
+                    </ul>
+                </div>
+                <p class="text-gray-400 text-[10px]">
+                    ※しきい値超過音（音声アラート）を使用するため、ブラウザのセキュリティ制限解除を目的として「同意してシミュレーターを開始」ボタンを押してください。
+                </p>
+            </div>
+            <button id="btn-start-simulation" class="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-xl border border-red-500 transition tracking-widest text-center shadow-lg active:scale-95">
+                同意してシミュレーターを開始する
+            </button>
+        </div>
+    </div>
+
+    <!-- Script部 -->
+    <script>
+        // ----------------------------------------------------
+        // 1. 各種定数と物理パラメータ設定
+        // ----------------------------------------------------
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'gt-gforce-pendulum';
+
+        // コース定義 (時間 t [秒] に対する速度[km/h]、前後G, 左右G, 上下Gのプロファイル関数)
+        const Courses = {
+            grand_valley: {
+                name: "Grand Valley Speedway",
+                length: "5,022m",
+                duration: 40, // 1周シミュレーションにかける秒数
+                getG: function(t, isRace) {
+                    // S字コーナー、トンネル、ヘアピン
+                    const maxScale = isRace ? 1.4 : 0.28;
+                    const speedMax = isRace ? 220 : 60;
+                    const speedMin = isRace ? 65 : 30;
+                    
+                    const progress = t % 40;
+                    let speed = speedMax;
+                    let ax = 0.0;
+                    let ay = 0.0;
+                    let az = 1.0; // 通常の1G
+                    let sector = "ストレート";
+
+                    if (progress < 8) {
+                        // 1. ストレートでの加速
+                        ax = 0.3 * Math.sin((progress / 8) * Math.PI / 2);
+                        ay = 0.02 * Math.sin(progress * 2);
+                        speed = speedMin + (speedMax - speedMin) * (progress / 8);
+                        sector = "第1ストレート";
+                    } else if (progress < 14) {
+                        // 2. Turn 1 (高速左コーナーへの急ブレーキ)
+                        const decelProgress = (progress - 8) / 6;
+                        ax = -0.8 * Math.sin(decelProgress * Math.PI); // 急減速
+                        ay = -0.95 * Math.sin(decelProgress * Math.PI); // 左旋回による右G
+                        speed = speedMax - (speedMax - speedMin) * Math.sin(decelProgress * Math.PI / 2);
+                        sector = "第1コーナー (高速左)";
+                    } else if (progress < 18) {
+                        // 3. 第1トンネル内 (緩やかな右)
+                        const tunnelProgress = (progress - 14) / 4;
+                        ax = 0.1 * Math.sin(tunnelProgress * Math.PI);
+                        ay = 0.4 * Math.sin(tunnelProgress * Math.PI); // 左G
+                        speed = speedMin + (speedMax - speedMin) * 0.4 * tunnelProgress;
+                        sector = "第1トンネル (緩い右)";
+                    } else if (progress < 26) {
+                        // 4. 連続S字切り返し (左右G激しい蛇行)
+                        const sCurveProgress = (progress - 18) / 8;
+                        ax = -0.2 * Math.sin(sCurveProgress * Math.PI * 4);
+                        ay = 1.1 * Math.sin(sCurveProgress * Math.PI * 3); // 激しく左右へ
+                        speed = speedMin + (speedMax - speedMin) * 0.3 * (1 - sCurveProgress);
+                        sector = "S字連続切り返し";
+                    } else if (progress < 32) {
+                        // 5. ヘアピンターン (最強減速と最大横G)
+                        const hairpinProgress = (progress - 26) / 6;
+                        ax = -1.2 * Math.exp(-hairpinProgress * 2); // フルブレーキング
+                        ay = -1.3 * Math.sin(hairpinProgress * Math.PI); // 強烈な右への旋回G
+                        speed = speedMin - 15 + (speedMax - speedMin) * 0.1;
+                        sector = "ヘアピンコーナー (タイト左)";
+                    } else {
+                        // 6. 脱出からホームストレート
+                        const lastProgress = (progress - 32) / 8;
+                        ax = 0.4 * (1 - lastProgress);
+                        ay = 0.2 * Math.sin(lastProgress * Math.PI);
+                        speed = speedMin + (speedMax - speedMin) * lastProgress;
+                        sector = "ホームストレート加速";
+                    }
+
+                    return {
+                        ax: ax * maxScale,
+                        ay: ay * maxScale,
+                        az: az + (isRace ? (Math.random() - 0.5) * 0.15 : (Math.random() - 0.5) * 0.03), // リアルな細密な振動
+                        speed: speed,
+                        sector: sector
+                    };
+                }
+            },
+            test_course: {
+                name: "Test Course",
+                length: "10,342m",
+                duration: 40,
+                getG: function(t, isRace) {
+                    // 超高速オーバル 巨大バンク
+                    const progress = t % 40;
+                    const speedMax = isRace ? 360 : 80;
+                    const speedMin = isRace ? 80 : 50;
+                    let speed = speedMax;
+                    let ax = 0.0;
+                    let ay = 0.0;
+                    let az = 1.0;
+                    let sector = "超長大ストレート";
+
+                    if (progress < 15) {
+                        // 1. ストレート：極限加速
+                        const accProgress = progress / 15;
+                        ax = 0.45 * Math.pow(1 - accProgress, 2); // 速度上昇につれて加速が鈍化
+                        ay = 0.0;
+                        speed = speedMin + (speedMax - speedMin) * accProgress;
+                        sector = "最高速アタック直線";
+                    } else if (progress < 30) {
+                        // 2. 超巨大30度バンク進入
+                        const bankProgress = (progress - 15) / 15;
+                        speed = speedMax - 20 * Math.sin(bankProgress * Math.PI);
+                        
+                        if (isRace) {
+                            // 時速350km超：強い遠心力により、ロール傾斜（カント30度）と合算され、縦圧縮Gが劇的に発生。横Gは遠心力と傾斜が釣り合うためやや減少。
+                            ay = 0.3 * Math.sin(bankProgress * Math.PI); // カントが遠心力を打消すため、横Gはマイルド
+                            az = 1.0 + 0.65 * Math.sin(bankProgress * Math.PI); // 強烈なボトム圧縮縦G（体輪重圧）
+                        } else {
+                            // 日常走行（時速80km以下）：バンクが急すぎて、車が内側に滑り落ちるようなマイナス横Gが発生！
+                            ay = -0.15 * Math.sin(bankProgress * Math.PI); // イン側に引かれる
+                            az = 1.0 + 0.05 * Math.sin(bankProgress * Math.PI);
+                        }
+                        sector = "超高速30度バンク突入";
+                    } else {
+                        // 3. バンク脱出、ストレート復帰
+                        const exitProgress = (progress - 30) / 10;
+                        ax = 0.1;
+                        ay = 0.0;
+                        speed = speedMax - 20 * (1 - exitProgress);
+                        sector = "ホームストレート";
+                    }
+
+                    return {
+                        ax: ax * (isRace ? 1.0 : 0.2),
+                        ay: ay * (isRace ? 1.0 : 0.6),
+                        az: az
+                    };
+                }
+            },
+            seattle: {
+                name: "Seattle Circuit",
+                length: "3,863m",
+                duration: 40,
+                getG: function(t, isRace) {
+                    // 市街地急坂・ジャンピング
+                    const progress = t % 40;
+                    const speedMax = isRace ? 200 : 50;
+                    const speedMin = isRace ? 50 : 30;
+                    let speed = speedMax;
+                    let ax = 0.0;
+                    let ay = 0.0;
+                    let az = 1.0;
+                    let sector = "市街地フラット";
+
+                    if (progress < 10) {
+                        // 1. 直角コーナー手前のブレーキと直角曲がり
+                        const cornerP = progress / 10;
+                        ax = -0.7 * Math.sin(cornerP * Math.PI);
+                        ay = 0.8 * Math.sin(cornerP * Math.PI);
+                        speed = speedMax - (speedMax - speedMin) * Math.sin(cornerP * Math.PI / 2);
+                        sector = "直角市街地ターン";
+                    } else if (progress < 18) {
+                        // 2. 急激な上り坂
+                        const slopeP = (progress - 10) / 8;
+                        ax = 0.3 * (1 - slopeP); // 坂を上る負荷
+                        ay = 0.0;
+                        az = 1.15; // 坂の進入で圧縮
+                        speed = speedMin + (speedMax - speedMin) * slopeP;
+                        sector = "激しい上り急坂";
+                    } else if (progress < 22) {
+                        // 3. ★ジャンピング丘（ジャンプ！無重力 0G）
+                        const jumpP = (progress - 18) / 4;
+                        if (isRace) {
+                            if (jumpP < 0.4) {
+                                // 飛び出した瞬間 0G
+                                az = 0.05; // ほぼ無重力
+                                ax = -0.05; // 空力ブレーキ
+                                speed = speedMax;
+                            } else if (jumpP < 0.6) {
+                                // 着地瞬間！！2.5Gを超えるボトムアウト衝撃
+                                az = 2.6; // 強烈衝撃
+                                ax = -0.3;
+                                speed = speedMax - 30;
+                            } else {
+                                // リバウンド後復帰
+                                az = 1.0;
+                                speed = speedMax - 20;
+                            }
+                        } else {
+                            // 日常走行：サスペンションがマイルドに吸収し、ジャンプしない
+                            az = 1.0 - 0.25 * Math.sin(jumpP * Math.PI);
+                            speed = speedMin + 10;
+                        }
+                        sector = isRace ? "空中ジャンプ＆ボトムアウト！" : "起伏なだらか吸収";
+                    } else {
+                        // 4. 急制動シケイン
+                        const lastP = (progress - 22) / 18;
+                        ax = -0.9 * Math.sin(lastP * Math.PI);
+                        ay = -0.6 * Math.sin(lastP * Math.PI * 2);
+                        speed = speedMin + (speedMax - speedMin) * lastP;
+                        sector = "急制動シケイン";
+                    }
+
+                    return {
+                        ax: ax * (isRace ? 1.0 : 0.25),
+                        ay: ay * (isRace ? 1.0 : 0.25),
+                        az: az
+                    };
+                }
+            },
+            laguna: {
+                name: "Laguna Seca",
+                length: "3,662m",
+                duration: 40,
+                getG: function(t, isRace) {
+                    // コークスクリュー (急降下、S字)
+                    const progress = t % 40;
+                    const speedMax = isRace ? 180 : 50;
+                    const speedMin = isRace ? 40 : 25;
+                    let speed = speedMax;
+                    let ax = 0.0;
+                    let ay = 0.0;
+                    let az = 1.0;
+                    let sector = "インフィールド";
+
+                    if (progress < 15) {
+                        // アプローチ
+                        const appP = progress / 15;
+                        ax = 0.2;
+                        ay = 0.5 * Math.sin(appP * Math.PI);
+                        speed = speedMin + (speedMax - speedMin) * appP;
+                        sector = "コークスクリュー・アプローチ";
+                    } else if (progress < 25) {
+                        // ★コークスクリュー急降下 (ロール速度50deg/s, az=0.4G、直後に左右ロールと1.7G底突き)
+                        const corkP = (progress - 15) / 10;
+                        if (corkP < 0.4) {
+                            // 頂点から崖下へ急降下：内臓が浮き上がるような浮遊感
+                            az = isRace ? 0.35 : 0.7; // 抜重
+                            ay = isRace ? -0.8 : -0.2; // 降下開始の左ターン
+                            ax = isRace ? -0.4 : -0.1;
+                            speed = speedMax - 20;
+                        } else if (corkP < 0.8) {
+                            // 右に一気に切り替えながらバンク底へ圧縮
+                            az = isRace ? 1.85 : 1.15; // 強いボトム
+                            ay = isRace ? 1.2 : 0.3; // 右切り返し
+                            ax = isRace ? -0.5 : -0.15;
+                            speed = speedMax - 40;
+                        } else {
+                            // 脱出
+                            az = 1.0;
+                            ay = 0.0;
+                            speed = speedMin + 15;
+                        }
+                        sector = "コークスクリュー急降下(崖下)";
+                    } else {
+                        // 高速最終コーナーへの加速
+                        const exitP = (progress - 25) / 15;
+                        ax = 0.3;
+                        ay = -0.7 * Math.sin(exitP * Math.PI);
+                        speed = speedMin + (speedMax - speedMin) * exitP;
+                        sector = "最終コーナー";
+                    }
+
+                    return {
+                        ax: ax * (isRace ? 1.0 : 0.25),
+                        ay: ay * (isRace ? 1.0 : 0.25),
+                        az: az
+                    };
+                }
+            },
+            complex_string: {
+                name: "Complex String",
+                length: "11,234m",
+                duration: 40,
+                getG: function(t, isRace) {
+                    // スラローム
+                    const progress = t % 40;
+                    const speedMax = isRace ? 150 : 45;
+                    const speedMin = isRace ? 40 : 20;
+                    let speed = speedMax;
+                    let ax = 0.0;
+                    let ay = 0.0;
+                    let az = 1.0;
+                    let sector = "スラローム";
+
+                    if (progress < 30) {
+                        // 周期的なスラローム (サイン波左右G)
+                        const slalomFreq = isRace ? 1.8 : 0.8; // 周波数Hz
+                        const scale = isRace ? 1.25 : 0.28;
+                        ay = scale * Math.sin(progress * slalomFreq);
+                        ax = -0.15 * Math.abs(ay); // 切り返し時の抵抗
+                        speed = speedMax - 15 * Math.abs(Math.sin(progress * slalomFreq));
+                        sector = "連続うねりスラローム区間";
+                    } else {
+                        // ループ旋回
+                        const loopP = (progress - 30) / 10;
+                        ay = (isRace ? 1.1 : 0.25); // 一定の旋回持続G
+                        ax = 0.1;
+                        speed = speedMin + 10;
+                        sector = "定常円ループ旋回";
+                    }
+
+                    return {
+                        ax: ax,
+                        ay: ay,
+                        az: az
+                    };
+                }
+            }
+        };
+
+        // ----------------------------------------------------
+        // 2. 状態管理
+        // ----------------------------------------------------
+        let state = {
+            isRunning: false,
+            courseKey: "grand_valley",
+            vehicleStyle: "eco", // "eco" | "race"
+            dampingType: "liquid", // "liquid" | "magnetic" | "friction"
+            dampingCoeff: 3.0,
+            soundEnabled: true,
+            isCalibrated: false,
+            calibrationOffset: { x: 0, y: 0 },
+            
+            // 物理シミュレーション用変数
+            currentTime: 0,
+            car: {
+                speed: 0,
+                ax: 0, // 前後G (慣性力用)
+                ay: 0, // 左右G
+                az: 1.0, // 上下G
+                sector: "ストレート"
+            },
+            
+            // 3Dジンバル振り子の物理演算状態
+            // theta_x (前後傾き), theta_y (左右傾き)
+            pendulum: {
+                thetaX: 0,
+                thetaY: 0,
+                omegaX: 0,
+                omegaY: 0,
+                // 摩擦ダンパー特有のヒステリシス記憶
+                lastRestX: 0,
+                lastRestY: 0
+            },
+
+            // 週刊誌のズレ
+            books: {
+                offsetX: 0,
+                offsetY: 0,
+                velX: 0,
+                velY: 0,
+                isFallen: false,
+                slipAccum: 0 // 蓄積された滑り量
+            }
+        };
+
+        // ----------------------------------------------------
+        // 3. UI要素の参照とバインド
+        // ----------------------------------------------------
+        const modal = document.getElementById("welcome-modal");
+        const btnStartSimulation = document.getElementById("btn-start-simulation");
+        const btnRun = document.getElementById("btn-run");
+        const selectCourse = document.getElementById("select-course");
+        const styleEco = document.getElementById("style-eco");
+        const styleRace = document.getElementById("style-race");
+        const sliderDamping = document.getElementById("slider-damping");
+        const valDamping = document.getElementById("val-damping");
+        const btnCalibrate = document.getElementById("btn-calibrate");
+        const btnToggleSound = document.getElementById("btn-toggle-sound");
+        const btnStackBooks = document.getElementById("btn-stack-books");
+        const statusBadge = document.getElementById("status-badge");
+        const dampingExplainBox = document.getElementById("damping-explain-box");
+        
+        // HUD表示
+        const hudSpeed = document.getElementById("hud-speed");
+        const hudTotalG = document.getElementById("hud-total-g");
+        const hudZG = document.getElementById("hud-z-g");
+        const valGx = document.getElementById("val-gx");
+        const valGy = document.getElementById("val-gy");
+        const valGz = document.getElementById("val-gz");
+        
+        // 本の状態HUD
+        const txtBookSlipDist = document.getElementById("book-slip-dist");
+        const txtBookStatus = document.getElementById("book-status");
+        const barBookSlip = document.getElementById("book-slip-bar");
+        const indicatorBookSlip = document.getElementById("book-slip-indicator");
+        const indicatorBookFall = document.getElementById("book-fall-indicator");
+
+        // キャンバス
+        const courseCanvas = document.getElementById("course-map-canvas");
+        const gbowlCanvas = document.getElementById("gbowl-canvas");
+        const gimbalCanvas = document.getElementById("gimbal-canvas");
+        const booksCanvas = document.getElementById("books-canvas");
+
+        const courseCtx = courseCanvas.getContext("2d");
+        const gbowlCtx = gbowlCanvas.getContext("2d");
+        const gimbalCtx = gimbalCanvas.getContext("2d");
+        const booksCtx = booksCanvas.getContext("2d");
+
+        // 3D ジンバルカメラ用回転角
+        let cameraAngleX = 0.5; // pitch-like orientation of camera
+        let cameraAngleZ = 0.8; // rotation around vertical axis
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        // ----------------------------------------------------
+        // 4. Web Audio API アラート音システム
+        // ----------------------------------------------------
+        let audioCtx = null;
+        let alertOscillator = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        // 短いビープ音
+        function playBeep(frequency, duration, volume = 0.1) {
+            if (!state.soundEnabled || !audioCtx) return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                
+                osc.type = "sine";
+                osc.frequency.value = frequency;
+                
+                gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+                
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.log("Audio playback error:", e);
+            }
+        }
+
+        // 本の崩落音（連続したガラガラ音）
+        function playBookFallSound() {
+            if (!state.soundEnabled || !audioCtx) return;
+            let time = audioCtx.currentTime;
+            for (let i = 0; i < 5; i++) {
+                const freq = 120 - i * 15;
+                const dur = 0.15;
+                setTimeout(() => {
+                    playBeep(freq, dur, 0.25);
+                }, i * 100);
+            }
+        }
+
+        // ----------------------------------------------------
+        // 5. ジンバル３Dドラッグ制御
+        // ----------------------------------------------------
+        const gimbalContainer = document.getElementById("gimbal-container");
+        gimbalContainer.addEventListener("mousedown", (e) => {
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        gimbalContainer.addEventListener("mousemove", (e) => {
+            if (!isDragging) return;
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+            cameraAngleZ -= deltaX * 0.01;
+            cameraAngleX += deltaY * 0.01;
+            // 制限
+            cameraAngleX = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraAngleX));
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener("mouseup", () => {
+            isDragging = false;
+        });
+
+        // モバイルタッチ操作対応
+        gimbalContainer.addEventListener("touchstart", (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+        });
+        gimbalContainer.addEventListener("touchmove", (e) => {
+            if (!isDragging || e.touches.length !== 1) return;
+            const deltaX = e.touches[0].clientX - previousMousePosition.x;
+            const deltaY = e.touches[0].clientY - previousMousePosition.y;
+            cameraAngleZ -= deltaX * 0.01;
+            cameraAngleX += deltaY * 0.01;
+            cameraAngleX = Math.max(0.1, Math.min(Math.PI / 2 - 0.1, cameraAngleX));
+            previousMousePosition = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        });
+        gimbalContainer.addEventListener("touchend", () => {
+            isDragging = false;
+        });
+
+        // ----------------------------------------------------
+        // 6. コースマップ描画機能
+        // ----------------------------------------------------
+        function drawCourseMap() {
+            const w = courseCanvas.width = courseCanvas.clientWidth;
+            const h = courseCanvas.height = courseCanvas.clientHeight;
+            courseCtx.clearRect(0, 0, w, h);
+            
+            // コースに沿った軌跡の描画 (ダミー描画だがコースごとにユニークな形状)
+            courseCtx.strokeStyle = "rgba(75, 85, 99, 0.4)";
+            courseCtx.lineWidth = 4;
+            courseCtx.lineJoin = "round";
+            courseCtx.lineCap = "round";
+
+            const cx = w / 2;
+            const cy = h / 2;
+            const rX = w * 0.38;
+            const rY = h * 0.32;
+
+            courseCtx.beginPath();
+            
+            const points = [];
+            const segments = 100;
+            
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                let x = cx + rX * Math.cos(angle);
+                let y = cy + rY * Math.sin(angle);
+                
+                // コース特有の凹凸変形
+                if (state.courseKey === "grand_valley") {
+                    x += 12 * Math.sin(angle * 4);
+                    y += 18 * Math.cos(angle * 3);
+                } else if (state.courseKey === "test_course") {
+                    // 平たい楕円
+                    x = cx + rX * 1.1 * Math.cos(angle);
+                    y = cy + rY * 0.7 * Math.sin(angle);
+                } else if (state.courseKey === "seattle") {
+                    // カクカクした市街地
+                    x = cx + rX * (Math.cos(angle) + 0.15 * Math.sin(angle * 3));
+                    y = cy + rY * (Math.sin(angle) + 0.15 * Math.cos(angle * 3));
+                } else if (state.courseKey === "laguna") {
+                    // コークスクリューを表現する複雑なループ
+                    x += 15 * Math.sin(angle * 2);
+                    y += 25 * Math.sin(angle * 2.5);
+                } else if (state.courseKey === "complex_string") {
+                    // うねうねスラローム
+                    x += 20 * Math.sin(angle * 8);
+                    y += 10 * Math.cos(angle * 4);
+                }
+                points.push({ x, y });
+                if (i === 0) courseCtx.moveTo(x, y);
+                else courseCtx.lineTo(x, y);
+            }
+            courseCtx.closePath();
+            courseCtx.stroke();
+
+            // トンネルや特異点などのシンボル描画
+            if (state.courseKey === "grand_valley") {
+                courseCtx.fillStyle = "#3b82f6";
+                courseCtx.fillText("TUNNEL 1", cx - 30, cy - rY + 5);
+                courseCtx.fillText("TUNNEL 2", cx - 40, cy + rY - 15);
+            } else if (state.courseKey === "test_course") {
+                courseCtx.fillStyle = "#eab308";
+                courseCtx.fillText("巨大30°バンク", cx - 40, cy - rY + 10);
+            } else if (state.courseKey === "seattle") {
+                courseCtx.fillStyle = "#ef4444";
+                courseCtx.fillText("ジャンピング丘", cx - 40, cy - 5);
+            } else if (state.courseKey === "laguna") {
+                courseCtx.fillStyle = "#a855f7";
+                courseCtx.fillText("コークスクリュー (急降下)", cx - 60, cy - 10);
+            }
+
+            // 現在地（ドット）のプロット
+            if (state.isRunning) {
+                const totalDuration = Courses[state.courseKey].duration;
+                const tPercent = (state.currentTime % totalDuration) / totalDuration;
+                const pointIdx = Math.floor(tPercent * segments);
+                const currentPos = points[pointIdx] || points[0];
+
+                // 光るドット
+                courseCtx.shadowBlur = 10;
+                courseCtx.shadowColor = "#ef4444";
+                courseCtx.fillStyle = "#ef4444";
+                courseCtx.beginPath();
+                courseCtx.arc(currentPos.x, currentPos.y, 6, 0, Math.PI * 2);
+                courseCtx.fill();
+                courseCtx.shadowBlur = 0; // リセット
+            } else {
+                // スタート地点
+                courseCtx.fillStyle = "#10b981";
+                courseCtx.beginPath();
+                courseCtx.arc(points[0].x, points[0].y, 6, 0, Math.PI * 2);
+                courseCtx.fill();
+            }
+
+            // 右上のセクター情報
+            courseCtx.fillStyle = "rgba(156, 163, 175, 0.9)";
+            courseCtx.font = "bold 9px 'Share Tech Mono'";
+            courseCtx.fillText(state.car.sector, 8, h - 8);
+        }
+
+        // ----------------------------------------------------
+        // 7. G-Bowl グラフィックス & 履歴軌跡
+        // ----------------------------------------------------
+        let gHistory = []; // Gの履歴を保持する配列 ({x, y})
+
+        function drawGBowl() {
+            const w = gbowlCanvas.width;
+            const h = gbowlCanvas.height;
+            gbowlCtx.clearRect(0, 0, w, h);
+
+            const cx = w / 2;
+            const cy = h / 2;
+            const maxRadius = w * 0.44; // 端（1.5G相当）
+
+            // 1Gあたりのピクセルスケール（日常なら0.3Gで縁まで。レースなら1.5Gで縁まで調整）
+            const gScaleLimit = state.vehicleStyle === "race" ? 1.5 : 0.45;
+            const pxPerG = maxRadius / gScaleLimit;
+
+            // 同心円の描画 (0.2G, 0.3G, 0.4G, または 0.5G, 1.0G, 1.5G)
+            const circles = state.vehicleStyle === "race" ? [0.5, 1.0, 1.5] : [0.2, 0.3, 0.4];
+            const colors = ["rgba(16, 185, 129, 0.15)", "rgba(245, 158, 11, 0.15)", "rgba(239, 68, 68, 0.15)"];
+            const borderColors = ["#10b981", "#f59e0b", "#ef4444"];
+
+            circles.forEach((gVal, idx) => {
+                const r = gVal * pxPerG;
+                gbowlCtx.fillStyle = colors[idx];
+                gbowlCtx.strokeStyle = borderColors[idx] + "aa";
+                gbowlCtx.lineWidth = 1.5;
+                
+                gbowlCtx.beginPath();
+                gbowlCtx.arc(cx, cy, r, 0, Math.PI * 2);
+                gbowlCtx.fill();
+                gbowlCtx.stroke();
+
+                // ラベル
+                gbowlCtx.fillStyle = borderColors[idx];
+                gbowlCtx.font = "9px 'Share Tech Mono'";
+                gbowlCtx.fillText(`${gVal}G`, cx + r - 25, cy - 4);
+            });
+
+            // 十字線の描画
+            gbowlCtx.strokeStyle = "rgba(75, 85, 99, 0.3)";
+            gbowlCtx.lineWidth = 1;
+            gbowlCtx.beginPath();
+            gbowlCtx.moveTo(cx - maxRadius, cy);
+            gbowlCtx.lineTo(cx + maxRadius, cy);
+            gbowlCtx.moveTo(cx, cy - maxRadius);
+            gbowlCtx.lineTo(cx, cy + maxRadius);
+            gbowlCtx.stroke();
+
+            // 軌跡（スリップライン）履歴の描画
+            if (gHistory.length > 1) {
+                gbowlCtx.beginPath();
+                gbowlCtx.lineWidth = 2.5;
+                for (let i = 0; i < gHistory.length; i++) {
+                    // 前後加速は上(12時)、ブレーキは下(6時)、右カーブによる横G(遠心力)は外側。
+                    // 座標系変換：前後G(Ax)正は加速→上。左右G(Ay)正は右G。
+                    const hX = cx + gHistory[i].y * pxPerG;
+                    const hY = cy - gHistory[i].x * pxPerG;
+                    if (i === 0) gbowlCtx.moveTo(hX, hY);
+                    else gbowlCtx.lineTo(hX, hY);
+                }
+                // グラデーションの軌跡
+                const grad = gbowlCtx.createRadialGradient(cx, cy, 10, cx, cy, maxRadius);
+                grad.addColorStop(0, "rgba(239, 68, 68, 0.7)");
+                grad.addColorStop(1, "rgba(239, 68, 68, 0.05)");
+                gbowlCtx.strokeStyle = grad;
+                gbowlCtx.stroke();
+            }
+
+            // 現在のボール位置（遅延のない生加速度を表示）
+            const bX = cx + state.car.ay * pxPerG;
+            const bY = cy - state.car.ax * pxPerG;
+
+            // ボールの影
+            gbowlCtx.shadowBlur = 12;
+            gbowlCtx.shadowColor = "#ef4444";
+            
+            // ボール本体
+            gbowlCtx.fillStyle = "#ffffff";
+            gbowlCtx.strokeStyle = "#ef4444";
+            gbowlCtx.lineWidth = 3;
+            gbowlCtx.beginPath();
+            gbowlCtx.arc(bX, bY, 8, 0, Math.PI * 2);
+            gbowlCtx.fill();
+            gbowlCtx.stroke();
+
+            gbowlCtx.shadowBlur = 0; // リセット
+        }
+
+        // ----------------------------------------------------
+        // 8. 3Dジンバル振り子描画機能 (3D射影数学)
+        // ----------------------------------------------------
+        function drawGimbal3D() {
+            const w = gimbalCanvas.width;
+            const h = gimbalCanvas.height;
+            gimbalCtx.clearRect(0, 0, w, h);
+
+            const cx = w / 2;
+            const cy = h / 2 + 10;
+            const scale = 70; // 3Dスケール係数
+
+            // 投影関数（3D回転変換）
+            function project(x, y, z) {
+                // Z軸回転（カメラ水平回転）
+                const cosZ = Math.cos(cameraAngleZ);
+                const sinZ = Math.sin(cameraAngleZ);
+                const x1 = x * cosZ - y * sinZ;
+                const y1 = x * sinZ + y * cosZ;
+
+                // X軸回転（俯角）
+                const cosX = Math.cos(cameraAngleX);
+                const sinX = Math.sin(cameraAngleX);
+                const y2 = y1 * cosX - z * sinX;
+                const z2 = y1 * sinX + z * cosX;
+
+                // 2D座標に変換
+                return {
+                    x: cx + x1 * scale,
+                    y: cy - y2 * scale,
+                    depth: z2
+                };
+            }
+
+            // A. 台座・フレーム（ベース）
+            gimbalCtx.strokeStyle = "rgba(75, 85, 99, 0.4)";
+            gimbalCtx.lineWidth = 2;
+            const baseCircle = [];
+            for (let a = 0; angle = (a / 32) * Math.PI * 2, a <= 32; a++) {
+                baseCircle.push(project(Math.cos(angle) * 1.3, Math.sin(angle) * 1.3, -1.1));
+            }
+            gimbalCtx.beginPath();
+            baseCircle.forEach((p, idx) => {
+                if (idx === 0) gimbalCtx.moveTo(p.x, p.y);
+                else gimbalCtx.lineTo(p.x, p.y);
+            });
+            gimbalCtx.stroke();
+
+            // 支柱（4本柱）
+            const pillars = [
+                {x: 1.2, y: 0}, {x: -1.2, y: 0}, {x: 0, y: 1.2}, {x: 0, y: -1.2}
+            ];
+            gimbalCtx.strokeStyle = "rgba(75, 85, 99, 0.3)";
+            pillars.forEach(pil => {
+                const bottom = project(pil.x, pil.y, -1.1);
+                const top = project(pil.x, pil.y, 0);
+                gimbalCtx.beginPath();
+                gimbalCtx.moveTo(bottom.x, bottom.y);
+                gimbalCtx.lineTo(top.x, top.y);
+                gimbalCtx.stroke();
+            });
+
+            // B. 外輪 (銀：Pitch軸 前後に回転)
+            // 外輪は、左右（Y軸）のピボットで本体に接続され、前後（X軸方向）に傾く
+            const thetaX = state.pendulum.thetaX;
+            gimbalCtx.strokeStyle = "#94a3b8"; // シルバー色
+            gimbalCtx.lineWidth = 5;
+            gimbalCtx.beginPath();
+            for (let a = 0; angle = (a / 32) * Math.PI * 2, a <= 32; a++) {
+                // X軸回転成分を含めた円
+                const xLocal = Math.cos(angle);
+                const yLocal = Math.sin(angle) * Math.cos(thetaX);
+                const zLocal = Math.sin(angle) * Math.sin(thetaX);
+                const p = project(xLocal * 1.15, yLocal * 1.15, zLocal * 1.15);
+                if (a === 0) gimbalCtx.moveTo(p.x, p.y);
+                else gimbalCtx.lineTo(p.x, p.y);
+            }
+            gimbalCtx.stroke();
+
+            // C. 内輪 (金：Roll軸 左右に回転)
+            // 内輪は外輪に直交し、前後（X軸）のピボットで外輪に支持され、左右に傾く
+            const thetaY = state.pendulum.thetaY;
+            gimbalCtx.strokeStyle = "#fbbf24"; // ゴールド色
+            gimbalCtx.lineWidth = 3.5;
+            gimbalCtx.beginPath();
+            for (let a = 0; angle = (a / 32) * Math.PI * 2, a <= 32; a++) {
+                // 外輪の傾き(thetaX)と、内輪独自の傾き(thetaY)の複合回転
+                const xRaw = Math.sin(angle) * Math.sin(thetaY);
+                const yRaw = Math.cos(angle);
+                const zRaw = Math.sin(angle) * Math.cos(thetaY);
+
+                // 外輪の回転を適用
+                const xRot = xRaw;
+                const yRot = yRaw * Math.cos(thetaX) - zRaw * Math.sin(thetaX);
+                const zRot = yRaw * Math.sin(thetaX) + zRaw * Math.cos(thetaX);
+
+                const p = project(xRot * 0.95, yRot * 0.95, zRot * 0.95);
+                if (a === 0) gimbalCtx.moveTo(p.x, p.y);
+                else gimbalCtx.lineTo(p.x, p.y);
+            }
+            gimbalCtx.stroke();
+
+            // D. 吊り下げ振り子シャフト ＆ 重り ＆ 指針
+            // 内輪の傾きが直接振り子（重り）に伝達される
+            // 振り子の先端位置ベクトル
+            const length = 0.9;
+            const fX = Math.sin(thetaY);
+            const fY = Math.sin(thetaX) * Math.cos(thetaY);
+            const fZ = -Math.cos(thetaX) * Math.cos(thetaY);
+
+            const pivot = project(0, 0, 0);
+            const weightPos = project(fX * length, fY * length, fZ * length);
+            const needlePos = project(-fX * 0.5, -fY * 0.5, -fZ * 0.5); // 上に伸びる針
+
+            // 振り子シャフト (鉄)
+            gimbalCtx.strokeStyle = "#cbd5e1";
+            gimbalCtx.lineWidth = 2.5;
+            gimbalCtx.beginPath();
+            gimbalCtx.moveTo(pivot.x, pivot.y);
+            gimbalCtx.lineTo(weightPos.x, weightPos.y);
+            gimbalCtx.stroke();
+
+            // 振り子の重り (球)
+            gimbalCtx.fillStyle = "#64748b";
+            gimbalCtx.strokeStyle = "#475569";
+            gimbalCtx.lineWidth = 2;
+            gimbalCtx.beginPath();
+            gimbalCtx.arc(weightPos.x, weightPos.y, 8, 0, Math.PI * 2);
+            gimbalCtx.fill();
+            gimbalCtx.stroke();
+
+            // オレンジの指示指針 (Needle)
+            gimbalCtx.strokeStyle = "#f97316"; // ネオンオレンジ
+            gimbalCtx.lineWidth = 3;
+            gimbalCtx.beginPath();
+            gimbalCtx.moveTo(pivot.x, pivot.y);
+            gimbalCtx.lineTo(needlePos.x, needlePos.y);
+            gimbalCtx.stroke();
+
+            // 指針の先端の赤いドット (文字盤投影イメージ)
+            gimbalCtx.fillStyle = "#ef4444";
+            gimbalCtx.beginPath();
+            gimbalCtx.arc(needlePos.x, needlePos.y, 3.5, 0, Math.PI * 2);
+            gimbalCtx.fill();
+
+            // E. 最上部の半透明文字盤 (ガラスドームプレート)
+            gimbalCtx.fillStyle = "rgba(59, 130, 246, 0.04)";
+            gimbalCtx.strokeStyle = "rgba(59, 130, 246, 0.25)";
+            gimbalCtx.lineWidth = 1;
+            const glassCircle = [];
+            for (let a = 0; angle = (a / 32) * Math.PI * 2, a <= 32; a++) {
+                glassCircle.push(project(Math.cos(angle) * 0.8, Math.sin(angle) * 0.8, 0.65));
+            }
+            gimbalCtx.beginPath();
+            glassCircle.forEach((p, idx) => {
+                if (idx === 0) gimbalCtx.moveTo(p.x, p.y);
+                else gimbalCtx.lineTo(p.x, p.y);
+            });
+            gimbalCtx.fill();
+            gimbalCtx.stroke();
+        }
+
+        // ----------------------------------------------------
+        // 9. 週刊誌2冊重ねシミュレーター描画
+        // ----------------------------------------------------
+        function drawBooks() {
+            const w = booksCanvas.width = booksCanvas.clientWidth;
+            const h = booksCanvas.height = booksCanvas.clientHeight;
+            booksCtx.clearRect(0, 0, w, h);
+
+            const groundY = h - 25;
+            const cx = w / 2;
+
+            // 地面（車体の床面）
+            booksCtx.strokeStyle = "rgba(75, 85, 99, 0.6)";
+            booksCtx.lineWidth = 3;
+            booksCtx.beginPath();
+            booksCtx.moveTo(20, groundY);
+            booksCtx.lineTo(w - 20, groundY);
+            booksCtx.stroke();
+
+            // 下車（床の模様、センターマーカー）
+            booksCtx.strokeStyle = "rgba(220, 38, 38, 0.3)";
+            booksCtx.lineWidth = 1.5;
+            booksCtx.setLineDash([3, 3]);
+            booksCtx.beginPath();
+            booksCtx.moveTo(cx, groundY + 15);
+            booksCtx.lineTo(cx, groundY - 60);
+            booksCtx.stroke();
+            booksCtx.setLineDash([]);
+
+            // 週刊誌1 (下巻：ある程度は滑りやすいが車体の摩擦でやや遅れる)
+            // 下巻のサイズ
+            const bookW = 100;
+            const bookH = 20;
+            
+            // 下巻のGによる僅かな滑り (上巻の半分の力で遅れて動く)
+            const lowerOffsetX = state.books.offsetX * 0.35;
+            
+            // 週刊誌1（下巻：赤）
+            const b1X = cx - bookW / 2 + lowerOffsetX;
+            const b1Y = groundY - bookH;
+            
+            booksCtx.fillStyle = "#1e293b";
+            booksCtx.strokeStyle = "#475569";
+            booksCtx.lineWidth = 2;
+            booksCtx.beginPath();
+            booksCtx.roundRect(b1X, b1Y, bookW, bookH, 3);
+            booksCtx.fill();
+            booksCtx.stroke();
+            
+            // 背表紙・ページ
+            booksCtx.fillStyle = "#f8fafc";
+            booksCtx.fillRect(b1X + 4, b1Y + 3, bookW - 8, bookH - 6);
+            booksCtx.fillStyle = "#b91c1c"; // タイトル風
+            booksCtx.font = "bold 9px 'Noto Sans JP'";
+            booksCtx.fillText("GT 攻略下巻", b1X + 15, b1Y + 13);
+
+            // 週刊誌2 (上巻：非常にツルッとしている、一番滑る)
+            const b2X = cx - bookW / 2 + state.books.offsetX;
+            const b2Y = b1Y - bookH;
+
+            // 崩落状態でない場合のみ上巻を描画
+            if (!state.books.isFallen) {
+                booksCtx.fillStyle = "#0f172a";
+                booksCtx.strokeStyle = "#64748b";
+                booksCtx.lineWidth = 2;
+                booksCtx.beginPath();
+                booksCtx.roundRect(b2X, b2Y, bookW, bookH, 3);
+                booksCtx.fill();
+                booksCtx.stroke();
+
+                // ページとネオンオレンジのカバー
+                booksCtx.fillStyle = "#f1f5f9";
+                booksCtx.fillRect(b2X + 4, b2Y + 3, bookW - 8, bookH - 6);
+                booksCtx.fillStyle = "#f97316";
+                booksCtx.font = "bold 9px 'Noto Sans JP'";
+                booksCtx.fillText("週刊G-BOWL上", b2X + 15, b2Y + 13);
+            } else {
+                // 完全に滑り落ちた上巻（床面に横たわる）
+                const fallenX = cx - bookW / 2 + (state.books.offsetX > 0 ? 110 : -110);
+                const fallenY = groundY - bookH;
+                
+                booksCtx.save();
+                // 若干傾いて落ちている
+                booksCtx.translate(fallenX + bookW/2, fallenY + bookH/2);
+                booksCtx.rotate(state.books.offsetX > 0 ? 0.08 : -0.08);
+                
+                booksCtx.fillStyle = "rgba(15, 23, 42, 0.85)";
+                booksCtx.strokeStyle = "rgba(100, 116, 139, 0.8)";
+                booksCtx.lineWidth = 2;
+                booksCtx.beginPath();
+                booksCtx.roundRect(-bookW/2, -bookH/2, bookW, bookH, 3);
+                booksCtx.fill();
+                booksCtx.stroke();
+                
+                booksCtx.fillStyle = "rgba(241, 245, 249, 0.9)";
+                booksCtx.fillRect(-bookW/2 + 4, -bookH/2 + 3, bookW - 8, bookH - 6);
+                
+                booksCtx.restore();
+            }
+        }
+
+        // ----------------------------------------------------
+        // 10. メイン物理演算エンジン (REAL-TIME ENGINE)
+        // ----------------------------------------------------
+        let lastTime = performance.now();
+
+        function physicsUpdate(now) {
+            let dt = (now - lastTime) / 1000;
+            if (dt > 0.1) dt = 0.1; // 極端なラグ防止
+            lastTime = now;
+
+            if (state.isRunning) {
+                state.currentTime += dt;
+
+                // コースおよび走行スタイルに応じたGデータの取得
+                const activeCourse = Courses[state.courseKey];
+                const isRace = state.vehicleStyle === "race";
+                const gProfile = activeCourse.getG(state.currentTime, isRace);
+
+                // キャリブレーションオフセットの適用
+                let targetAx = gProfile.ax;
+                let targetAy = gProfile.ay;
+                
+                if (state.isCalibrated) {
+                    targetAx -= state.calibrationOffset.x;
+                    targetAy -= state.calibrationOffset.y;
+                }
+
+                state.car.ax = targetAx;
+                state.car.ay = targetAy;
+                state.car.az = gProfile.az;
+                state.car.speed = gProfile.speed;
+                state.car.sector = gProfile.sector;
+
+                // Gの履歴をボウル描画用に記録 (30点分)
+                gHistory.push({ x: targetAx, y: targetAy });
+                if (gHistory.length > 50) gHistory.shift();
+
+                // アラート音響処理
+                const horizontalG = Math.sqrt(targetAx*targetAx + targetAy*targetAy);
+                if (horizontalG > 0.40) {
+                    // 超過しきい値
+                    if (Math.random() < 0.15) {
+                        playBeep(880, 0.08, 0.15); // ピピッと高い警告音
+                    }
+                } else if (horizontalG > 0.30) {
+                    if (Math.random() < 0.05) {
+                        playBeep(660, 0.05, 0.08); // 穏やかなアラート
+                    }
+                }
+            } else {
+                // 非走行時はGを滑らかに0へ落ち着かせる
+                state.car.ax += (0 - state.car.ax) * 0.1;
+                state.car.ay += (0 - state.car.ay) * 0.1;
+                state.car.az += (1.0 - state.car.az) * 0.1;
+                state.car.speed += (0 - state.car.speed) * 0.1;
+                state.car.sector = "停止状態";
+                
+                if (gHistory.length > 0) gfbClearHistory();
+            }
+
+            // A. 振り子・ジンバル機構のリアルタイム運動方程式（ニュートン力学オイラー積分）
+            updateGimbalPhysics(dt);
+
+            // B. バーチャル「週刊誌」のズレ・崩落物理演算
+            updateBooksPhysics(dt);
+
+            // 表示HUDの更新
+            updateHUDDisplay();
+
+            // 描画
+            drawCourseMap();
+            drawGBowl();
+            drawGimbal3D();
+            drawBooks();
+
+            requestAnimationFrame(physicsUpdate);
+        }
+
+        // Gの履歴を徐々に消去する
+        function gfbClearHistory() {
+            if (Math.random() < 0.2) {
+                gHistory.shift();
+            }
+        }
+
+        // ----------------------------------------------------
+        // 11. ジンバルの動的物理シミュレーション (ダンパー3特性対応)
+        // ----------------------------------------------------
+        function updateGimbalPhysics(dt) {
+            // 物理運動パラメータ
+            const gravity = 9.81;
+            const pendulumLength = 0.2; // 仮想振り子の長さ
+            const inertia = 0.05; // 慣性モーメント
+            
+            // 加速度Gを力(N)に換算。Gフォースによる見かけの力が働く
+            // ax, ay の値そのものが慣性力として振り子を逆方向に傾ける
+            const forceX = -state.car.ax * gravity; // 前後
+            const forceY = state.car.ay * gravity;  // 左右 (座標系の整合：遠心力は外へ)
+
+            // ダンパー性能による減衰項 C の計算
+            let c = parseFloat(state.dampingCoeff);
+            let dynamicDampingX = 0;
+            let dynamicDampingY = 0;
+
+            if (state.dampingType === "liquid") {
+                // 1. 液体ダンパー: 速度に完璧に比例する粘性抵抗
+                dynamicDampingX = c * state.pendulum.omegaX;
+                dynamicDampingY = c * state.pendulum.omegaY;
+            } 
+            else if (state.dampingType === "magnetic") {
+                // 2. 磁気ダンパー: 非常に摩擦がゼロのクリーンな粘性抵抗 (しなやか、やや強めに)
+                dynamicDampingX = (c * 1.3) * state.pendulum.omegaX;
+                dynamicDampingY = (c * 1.3) * state.pendulum.omegaY;
+            } 
+            else if (state.dampingType === "friction") {
+                // 3. 摩擦ダンパー (Coulomb摩擦 & 静止摩擦ヒステリシス)
+                // 速度が極めて遅く、かつかかる力が一定以下なら運動を停止（カクカク動く、0に完全に戻らない）
+                const dryFrictionCoeff = 0.5; // 動摩擦力
+                const staticFrictionLimit = 0.7; // 静摩擦力
+
+                // 前後軸 (X)
+                const totalAppliedTorqueX = forceX * Math.cos(state.pendulum.thetaX) - gravity * Math.sin(state.pendulum.thetaX);
+                if (Math.abs(state.pendulum.omegaX) < 0.02 && Math.abs(totalAppliedTorqueX) < staticFrictionLimit) {
+                    state.pendulum.omegaX = 0;
+                } else {
+                    // 動摩擦ブレーキ
+                    const frictionDirection = state.pendulum.omegaX > 0 ? 1 : -1;
+                    dynamicDampingX = frictionDirection * dryFrictionCoeff + (c * 0.2) * state.pendulum.omegaX;
+                }
+
+                // 左右軸 (Y)
+                const totalAppliedTorqueY = forceY * Math.cos(state.pendulum.thetaY) - gravity * Math.sin(state.pendulum.thetaY);
+                if (Math.abs(state.pendulum.omegaY) < 0.02 && Math.abs(totalAppliedTorqueY) < staticFrictionLimit) {
+                    state.pendulum.omegaY = 0;
+                } else {
+                    const frictionDirection = state.pendulum.omegaY > 0 ? 1 : -1;
+                    dynamicDampingY = frictionDirection * dryFrictionCoeff + (c * 0.2) * state.pendulum.omegaY;
+                }
+            }
+
+            // 運動方程式（角加速度α = トルク/慣性）
+            // トルク T = F * L * cos(theta) - m * g * L * sin(theta) - damping
+            const torqueX = (forceX * pendulumLength * Math.cos(state.pendulum.thetaX) 
+                             - gravity * pendulumLength * Math.sin(state.pendulum.thetaX)) - dynamicDampingX;
+            const torqueY = (forceY * pendulumLength * Math.cos(state.pendulum.thetaY) 
+                             - gravity * pendulumLength * Math.sin(state.pendulum.thetaY)) - dynamicDampingY;
+
+            const alphaX = torqueX / inertia;
+            const alphaY = torqueY / inertia;
+
+            // オイラー法積分
+            state.pendulum.omegaX += alphaX * dt;
+            state.pendulum.omegaY += alphaY * dt;
+            state.pendulum.thetaX += state.pendulum.omegaX * dt;
+            state.pendulum.thetaY += state.pendulum.omegaY * dt;
+
+            // 限界角度制限 (ジンバルリングの物理衝突制限 ±45度相当)
+            const angleLimit = Math.PI / 4;
+            if (state.pendulum.theta/X > angleLimit) { state.pendulum.thetaX = angleLimit; state.pendulum.omegaX = 0; }
+            if (state.pendulum.thetaX < -angleLimit) { state.pendulum.thetaX = -angleLimit; state.pendulum.omegaX = 0; }
+            if (state.pendulum.thetaY > angleLimit) { state.pendulum.thetaY = angleLimit; state.pendulum.omegaY = 0; }
+            if (state.pendulum.thetaY < -angleLimit) { state.pendulum.thetaY = -angleLimit; state.pendulum.omegaY = 0; }
+        }
+
+        // ----------------------------------------------------
+        // 12. 週刊誌2冊重ねの物理挙動
+        // ----------------------------------------------------
+        function updateBooksPhysics(dt) {
+            if (state.books.isFallen) return;
+
+            // 水平の合成Gの大きさ
+            const hG = Math.sqrt(state.car.ax * state.car.ax + state.car.ay * state.car.ay);
+            
+            // 本の物理モデル：週刊誌間の摩擦係数
+            const staticFriction = 0.30;  // 0.30Gまでは滑らない
+            const kineticFriction = 0.22; // 滑りだすと一気に動く
+
+            if (hG > staticFriction) {
+                // 滑り発生！
+                indicatorBookSlip.classList.remove("hidden");
+                txtBookStatus.innerText = hG > 0.40 ? "急激な滑り(崩落寸前)" : "滑り出し(0.3G超)";
+                txtBookStatus.className = "text-xs text-amber-500 font-bold";
+
+                // 加速度によるスライド速度の計算
+                // 滑り方向ベクトル
+                const slipAngle = Math.atan2(state.car.ay, -state.car.ax); // Ax, Ayから方向決定
+                const forceMag = hG - kineticDamping(hG); // 摩擦を差し引いた有効力
+                
+                // 本の変位
+                state.books.velX += Math.sin(slipAngle) * forceMag * 150 * dt;
+                state.books.velY += Math.cos(slipAngle) * forceMag * 150 * dt;
+            } else {
+                // 静止状態：車体が緩やかに減速・中心に戻る傾向なら、ゆっくり中央に戻る復元力を働かせる（マイルドに積む戻し効果）
+                indicatorBookSlip.classList.add("hidden");
+                txtBookStatus.innerText = "安定静止 (0.2G以下)";
+                txtBookStatus.className = "text-xs text-green-400 font-bold";
+
+                // 本の復元力 (床の滑り止め効果、滑り終えるとゆっくり中心に戻るアライニング特性)
+                state.books.velX += (0 - state.books.offsetX) * 2.5 * dt;
+                state.books.velY += (0 - state.books.offsetY) * 2.5 * dt;
+
+                // 速度減衰
+                state.books.velX *= 0.85;
+                state.books.velY *= 0.85;
+            }
+
+            // 位置の更新
+            stateBooksUpdate();
+
+            // 0.4G超過時の完全落下（崩落）判定
+            if (hG > 0.42) {
+                const bookSlipDist = Math.sqrt(state.books.offsetX * state.books.offsetX + state.books.offsetY * state.books.offsetY);
+                if (bookSlipDist > 55) {
+                    state.books.isFallen = true;
+                    indicatorBookFall.classList.remove("hidden");
+                    playFallSound();
+                }
+            }
+        }
+
+        // 摩擦補正
+        function kineticDamping(hG) {
+            return 0.20; // 動摩擦係数相当の力
+        }
+
+        function stateBooksUpdate() {
+            state.books.offsetX += state.books.velX * 0.1;
+            state.books.offsetY += state.books.velY * 0.1;
+
+            // 滑り落ちる限界範囲の視覚的制限
+            const maxSlide = 140;
+            const dist = Math.sqrt(state.books.offsetX * state.books.offsetX + state.books.offsetY * state.books.offsetY);
+            if (dist > maxSlide) {
+                // 完全に落下状態にする
+                state.books.isFallen = true;
+                indicatorBookFall.classList.remove("hidden");
+                playBookFallSound();
+            }
+
+            // HUD表示の更新
+            const dispDist = (dist * 0.4).toFixed(1); // 仮想mmに換算
+            txtBookSlipDist.innerText = `${dispDist} mm`;
+            
+            // プログレスバーの更新 (0.4Gライン＝最大許容量の比率)
+            const percent = Math.min(100, (dist / 110) * 100);
+            barBookSlip.style.width = `${percent}%`;
+            if (percent > 80) {
+                barBookSlip.className = "bg-red-500 h-full transition-all duration-100";
+            } else if (percent > 40) {
+                barBookSlip.className = "bg-yellow-500 h-full transition-all duration-100";
+            } else {
+                barBookSlip.className = "bg-green-500 h-full transition-all duration-100";
+            }
+        }
+
+        // ----------------------------------------------------
+        // 13. HUDデジタル表示更新
+        // ----------------------------------------------------
+        const txtBookStatus = document.getElementById("book-status");
+        const indicatorBookFall = document.getElementById("book-fall-indicator");
+
+        function updateHUDDisplay() {
+            hudSpeed.innerText = Math.round(state.car.speed);
+            
+            const totalG = Math.sqrt(state.car.ax * state.car.ax + state.car.ay * state.car.ay);
+            hudTotalG.innerText = totalG.toFixed(2);
+            hudZG.innerText = state.car.az.toFixed(2);
+
+            valGx.innerText = `${state.car.ax >= 0 ? "+" : ""}${state.car.ax.toFixed(2)}G`;
+            valGy.innerText = `${state.car.ay >= 0 ? "+" : ""}${state.car.ay.toFixed(2)}G`;
+            valGz.innerText = `${state.car.az.toFixed(2)}G`;
+
+            // Gの強さに応じてテキストカラーを変更
+            if (totalG > 0.4) {
+                hudTotalG.className = "text-3xl font-black text-red-500 lcd-font";
+            } else if (totalG > 0.2) {
+                hudTotalG.className = "text-3xl font-black text-yellow-500 lcd-font";
+            } else {
+                hudTotalG.className = "text-3xl font-black text-green-400 lcd-font";
+            }
+        }
+
+        // ----------------------------------------------------
+        // 14. 各種コントロール・イベントリスナー設定
+        // ----------------------------------------------------
+        
+        // A. Welcomeモーダルのクリック
+        btnStartSimulation.addEventListener("click", () => {
+            initAudio();
+            modal.style.display = "none";
+            // 開始ビープ
+            playBeep(440, 0.1, 0.1);
+            setTimeout(() => playBeep(880, 0.15, 0.1), 120);
+        });
+
+        // B. 自動走行 スタート・ストップ
+        btnRun.addEventListener("click", () => {
+            initAudio();
+            state.isRunning = !state.isRunning;
+            
+            if (state.isRunning) {
+                btnRun.innerHTML = `<i class="fa-solid fa-stop"></i> <span>シミュレーション 停止</span>`;
+                btnRun.className = "w-full bg-gray-800 hover:bg-gray-700 text-white font-black py-4 px-6 rounded-xl border border-gray-700 shadow-lg text-lg tracking-widest transition transform active:scale-95 flex items-center justify-center space-x-3 mb-4";
+                statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> ACTIVE RUNNING`;
+                statusBadge.className = "px-3 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 flex items-center gap-1.5 animate-pulse";
+                playBeep(523, 0.08, 0.1);
+                setTimeout(() => playBeep(659, 0.08, 0.1), 80);
+                setTimeout(() => playBeep(784, 0.15, 0.1), 160);
+            } else {
+                btnRun.innerHTML = `<i class="fa-solid fa-play"></i> <span>自動走行 スタート</span>`;
+                btnRun.className = "w-full bg-red-600 hover:bg-red-500 text-white font-black py-4 px-6 rounded-xl border border-red-500 shadow-lg text-lg tracking-widest transition transform active:scale-95 flex items-center justify-center space-x-3 mb-4";
+                statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> READY`;
+                statusBadge.className = "px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center gap-1.5 animate-pulse";
+                playBeep(784, 0.08, 0.1);
+                setTimeout(() => playBeep(523, 0.15, 0.1), 100);
+            }
+        });
+
+        // C. コース選択
+        selectCourse.addEventListener("change", (e) => {
+            state.courseKey = e.target.value;
+            state.currentTime = 0; // 時間リセット
+            gHistory = []; // 履歴リセット
+            playBeep(440, 0.1, 0.1);
+        });
+
+        // D. 走行スタイル
+        styleEco.addEventListener("click", () => {
+            state.vehicleStyle = "eco";
+            styleEco.className = "py-2.5 px-3 rounded-lg text-xs font-bold border border-emerald-500 bg-emerald-500/10 text-emerald-400 flex flex-col items-center justify-center hover:bg-emerald-500/20 transition duration-150";
+            styleRace.className = "py-2.5 px-3 rounded-lg text-xs font-bold border border-gray-700 bg-gray-900 text-gray-400 flex flex-col items-center justify-center hover:bg-gray-800 transition duration-150";
+            playBeep(330, 0.1, 0.1);
+        });
+        styleRace.addEventListener("click", () => {
+            state.vehicleStyle = "race";
+            styleRace.className = "py-2.5 px-3 rounded-lg text-xs font-bold border border-red-500 bg-red-500/10 text-red-400 flex flex-col items-center justify-center hover:bg-red-500/20 transition duration-150";
+            styleEco.className = "py-2.5 px-3 rounded-lg text-xs font-bold border border-gray-700 bg-gray-900 text-gray-400 flex flex-col items-center justify-center hover:bg-gray-800 transition duration-150";
+            playBeep(587, 0.1, 0.1);
+        });
+
+        // E. ダンパータイプ選択
+        const radiosDamping = document.querySelectorAll('input[name="damping-type"]');
+        radiosDamping.forEach(radio => {
+            radio.addEventListener("change", (e) => {
+                state.dampingType = e.target.value;
+                updateDampingUI();
+                playBeep(440, 0.08, 0.1);
+            });
+        });
+
+        function updateDampingUI() {
+            // 全て非アクティブ化
+            document.getElementById("lbl-damping-liquid").className = "cursor-pointer border border-gray-800 bg-gray-900 text-gray-400 p-2 rounded flex flex-col items-center justify-center";
+            document.getElementById("lbl-damping-magnetic").className = "cursor-pointer border border-gray-800 bg-gray-900 text-gray-400 p-2 rounded flex flex-col items-center justify-center";
+            document.getElementById("lbl-damping-friction").className = "cursor-pointer border border-gray-800 bg-gray-900 text-gray-400 p-2 rounded flex flex-col items-center justify-center";
+
+            if (state.dampingType === "liquid") {
+                document.getElementById("lbl-damping-liquid").className = "cursor-pointer border border-blue-500 bg-blue-500/10 text-blue-400 p-2 rounded flex flex-col items-center justify-center";
+                dampingExplainBox.innerHTML = `
+                    <span class="font-bold text-blue-400 block mb-1">💧 液体ダンパー (Liquid Damper)</span>
+                    液体の粘り気を利用した標準的な減衰。滑らかに計器が落ち着きますが、温度変化や液漏れの欠点があります。
+                `;
+            } else if (state.dampingType === "magnetic") {
+                document.getElementById("lbl-damping-magnetic").className = "cursor-pointer border border-amber-500 bg-amber-500/10 text-amber-400 p-2 rounded flex flex-col items-center justify-center";
+                dampingExplainBox.innerHTML = `
+                    <span class="font-bold text-amber-400 block mb-1">🧲 磁気ダンパー (Magnetic Damper)</span>
+                    電磁誘導による渦電流ブレーキを利用。非接触のため磨耗がなく極めて高精度で滑らか、精密天秤などに使われます。
+                `;
+            } else if (state.dampingType === "friction") {
+                document.getElementById("lbl-damping-friction").className = "cursor-pointer border border-red-500 bg-red-500/10 text-red-400 p-2 rounded flex flex-col items-center justify-center";
+                dampingExplainBox.innerHTML = `
+                    <span class="font-bold text-red-400 block mb-1">⚙️ 摩擦ダンパー (Friction Damper)</span>
+                    ブレーキパッドを物理接触させ摩擦力で制振。静摩擦（ひっかかり）があるため微細なGでカクついたり、元の位置に完全に戻らない「ヒステリシス誤差」を物理再現します。
+                `;
+            }
+        }
+
+        // F. ダンパー係数
+        sliderDamping.addEventListener("input", (e) => {
+            state.dampingCoeff = e.target.value;
+            valDamping.innerText = parseFloat(state.dampingCoeff).toFixed(1);
+        });
+
+        // G. キャリブレーション (ゼロ点補正)
+        btnCalibrate.addEventListener("click", () => {
+            initAudio();
+            // 現在のGをオフセットにする
+            if (state.isRunning) {
+                // デモ走行中のゼロ点調整
+                state.calibrationOffset.x = state.car.ax;
+                state.calibrationOffset.y = state.car.ay;
+                state.isCalibrated = true;
+            } else {
+                // 停止状態ならリセット
+                state.calibrationOffset = { x: 0, y: 0 };
+                state.isCalibrated = false;
+            }
+            playBeep(880, 0.1, 0.15);
+            
+            // 一時的にステータスバッジに「CALIBRATION DONE」と表示
+            const originalBadge = statusBadge.innerHTML;
+            const originalClass = statusBadge.className;
+            statusBadge.innerHTML = `<i class="fa-solid fa-check"></i> CALIBRATED`;
+            statusBadge.className = "px-3 py-1 rounded-full text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/30 flex items-center gap-1.5";
+            setTimeout(() => {
+                statusBadge.innerHTML = originalBadge;
+                statusBadge.className = originalClass;
+            }, 1500);
+        });
+
+        // H. サウンドON/OFFトグル
+        btnToggleSound.addEventListener("click", () => {
+            state.soundEnabled = !state.soundEnabled;
+            if (state.soundEnabled) {
+                btnToggleSound.innerHTML = `<i class="fa-solid fa-volume-high"></i>`;
+                btnToggleSound.className = "text-xl text-green-400 p-2 rounded hover:bg-gray-800 transition";
+                initAudio();
+                playBeep(880, 0.1, 0.1);
+            } else {
+                btnToggleSound.innerHTML = `<i class="fa-solid fa-volume-xmark"></i>`;
+                btnToggleSound.className = "text-xl text-gray-500 p-2 rounded hover:bg-gray-800 transition";
+            }
+        });
+
+        // I. 本を積み直す
+        btnStackBooks.addEventListener("click", () => {
+            initAudio();
+            state.books.offsetX = 0;
+            state.books.offsetY = 0;
+            state.books.velX = 0;
+            state.books.velY = 0;
+            state.books.isFallen = false;
+            indicatorBookFall.classList.add("hidden");
+            txtBookStatus.innerText = "安定静止 (0.2G以下)";
+            txtBookStatus.className = "text-xs text-green-400 font-bold";
+            barBookSlip.style.width = "0%";
+            playBeep(523, 0.1, 0.15);
+            setTimeout(() => playBeep(659, 0.1, 0.1), 100);
+        });
+
+        // ----------------------------------------------------
+        // 15. 初期化と起動
+        // ----------------------------------------------------
+        window.onload = function() {
+            // 描画ループ起動
+            requestAnimationFrame(physicsUpdate);
+        };
+    </script>
+</body>
+</html>
+
+
